@@ -250,6 +250,11 @@ struct Sensor
         return 1;
     }
 
+    virtual void createAssociation()
+    {
+        ::createAssociation(association, configurationPath);
+    }
+
     void setInitialProperties(const std::string& unit,
                               const std::string& label = std::string(),
                               size_t thresholdSize = 0)
@@ -260,7 +265,7 @@ struct Sensor
             setupPowerMatch(dbusConnection);
         }
 
-        createAssociation(association, configurationPath);
+        createAssociation();
 
         sensorInterface->register_property("Unit", unit);
         sensorInterface->register_property("MaxValue", maxValue);
@@ -453,17 +458,18 @@ struct Sensor
         }
     }
 
-    void incrementError()
+    // Return true on the call that made the sensor go nonfunctional.
+    bool incrementError()
     {
         if (!readingStateGood())
         {
             markAvailable(false);
-            return;
+            return false;
         }
 
         if (errCount >= errorThreshold)
         {
-            return;
+            return false;
         }
 
         errCount++;
@@ -471,7 +477,9 @@ struct Sensor
         {
             std::cerr << "Sensor " << name << " reading error!\n";
             markFunctional(false);
+            return true;
         }
+        return false;
     }
 
     bool inError() const

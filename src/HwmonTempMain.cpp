@@ -16,6 +16,7 @@
 
 #include "DeviceMgmt.hpp"
 #include "HwmonTempSensor.hpp"
+#include "SlotPowerManager.hpp"
 #include "Utils.hpp"
 
 #include <boost/algorithm/string/replace.hpp>
@@ -75,6 +76,7 @@ static const I2CDeviceTypeMap sensorTypes{
     {"TMP112", I2CDeviceType{"tmp112", true}},
     {"TMP175", I2CDeviceType{"tmp175", true}},
     {"TMP421", I2CDeviceType{"tmp421", true}},
+    {"TMP435", I2CDeviceType{"tmp435", true}},
     {"TMP441", I2CDeviceType{"tmp441", true}},
     {"TMP461", I2CDeviceType{"tmp461", true}},
     {"TMP464", I2CDeviceType{"tmp464", true}},
@@ -262,6 +264,8 @@ void createSensors(
          activateOnly](const ManagedObjectType& sensorConfigurations) {
         bool firstScan = sensorsChanged == nullptr;
 
+        slotPowerManager->update(sensorConfigurations);
+
         SensorConfigMap configMap = buildSensorConfigMap(sensorConfigurations);
 
         auto devices = instantiateDevices(sensorConfigurations, sensors,
@@ -434,7 +438,7 @@ void createSensors(
                         *hwmonFile, sensorType, objectServer, dbusConnection,
                         io, sensorName, std::move(sensorThresholds),
                         thisSensorParameters, pollRate, interfacePath,
-                        readState, i2cDev);
+                        readState, i2cDev, bus, addr);
                     sensor->setupRead();
                 }
             }
@@ -493,7 +497,8 @@ void createSensors(
                             *hwmonFile, sensorType, objectServer,
                             dbusConnection, io, sensorName,
                             std::move(thresholds), thisSensorParameters,
-                            pollRate, interfacePath, readState, i2cDev);
+                            pollRate, interfacePath, readState, i2cDev, bus,
+                            addr);
                         sensor->setupRead();
                     }
                 }
@@ -550,6 +555,29 @@ void interfaceRemoved(
     }
 }
 
+void checkForErrors(
+    PowerState type, bool newState,
+    boost::container::flat_map<std::string, std::shared_ptr<HwmonTempSensor>>&
+        sensors)
+{
+    // Only check when chassis power is turning on
+    if ((type != PowerState::chassisOn) || (!newState))
+    {
+        return;
+    }
+
+    // Forget about previous fails.
+    HwmonTempSensor::clearFailedDevices();
+
+    for (const auto& [name, sensor] : sensors)
+    {
+        if ((sensor->errCount >= errorThreshold) && std::isnan(sensor->value))
+        {
+            sensor->createEventLog();
+        }
+    }
+}
+
 static void powerStateChanged(
     PowerState type, bool newState,
     boost::container::flat_map<std::string, std::shared_ptr<HwmonTempSensor>>&
@@ -571,6 +599,8 @@ static void powerStateChanged(
             }
         }
     }
+
+    checkForErrors(type, newState, sensors);
 }
 
 int main()
@@ -591,6 +621,11 @@ int main()
         powerStateChanged(type, state, sensors, io, objectServer, systemBus);
     };
     setupPowerMatchCallback(systemBus, powerCallBack);
+
+    slotPowerManager = std::make_unique<SlotPowerManager>(
+        *systemBus, [&](const auto& newSensors) {
+        createSensors(io, objectServer, sensors, systemBus, newSensors, false);
+    });
 
     boost::asio::post(io, [&]() {
         createSensors(io, objectServer, sensors, systemBus, nullptr, false);
