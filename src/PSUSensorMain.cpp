@@ -78,6 +78,7 @@ static const I2CDeviceTypeMap sensorTypes{
     {"cffps1", I2CDeviceType{"cffps", true}},
     {"cffps2", I2CDeviceType{"cffps", true}},
     {"cffps3", I2CDeviceType{"cffps", true}},
+    {"CRPS185", I2CDeviceType{"crps185", true}},
     {"DPS800", I2CDeviceType{"dps800", true}},
     {"INA219", I2CDeviceType{"ina219", true}},
     {"INA230", I2CDeviceType{"ina230", true}},
@@ -576,7 +577,7 @@ static void createSensorsCallback(
             else
             {
                 std::cerr << "Could not extract the alpha prefix from "
-                          << sensorNameStr;
+                          << sensorNameStr << "\n";
                 continue;
             }
 
@@ -836,6 +837,7 @@ static void createSensorsCallback(
                 {
                     std::cerr << "Could not pair " << labelHead
                               << " with a Name field\n";
+
                     continue;
                 }
 
